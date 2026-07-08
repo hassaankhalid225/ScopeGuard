@@ -1,0 +1,19 @@
+# Local Postgres for ScopeGuard development.
+#   docker compose up -d
+# Then point backend/.env DATABASE_URL at it (the default already matches).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scopeguard-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: scopeguard
+    ports:
+      - '5432:5432'
+    volumes:
+      - scopeguard_pgdata:/var/lib/postgresql/data
+
+volumes:
+  scopeguard_pgdata:

@@ -1,0 +1,309 @@
+// ScopeGuard — data model
+// Mirrors the entities described in the Product Strategy / PRD:
+//   freelancer (User) → Clients → Projects (baseline) → Deliverables / Milestones
+//   Projects produce Invoices, Contracts, ScopeAlerts and ChangeOrders.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Freelancer account ──────────────────────────────────────────────────────
+
+enum FreelancerType {
+  DESIGNER
+  DEVELOPER
+  WRITER
+  MARKETER
+  OTHER
+}
+
+enum PlanTier {
+  STARTER // Free
+  PRO     // $9/mo
+  AGENCY  // $29/mo
+}
+
+model User {
+  id             String         @id @default(cuid())
+  email          String         @unique
+  passwordHash   String
+  name           String
+  freelancerType FreelancerType @default(OTHER)
+  niche          String?
+  hourlyRate     Int            @default(50) // stored in whole currency units
+  currency       String         @default("USD")
+  plan           PlanTier       @default(STARTER)
+  onboardedAt    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  clients   Client[]
+  projects  Project[]
+  invoices  Invoice[]
+  contracts Contract[]
+
+  @@map("users")
+}
+
+// ─── Clients ─────────────────────────────────────────────────────────────────
+
+model Client {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  email     String
+  company   String?
+  // Computed risk indicator (0 = no risk, 100 = highest). Updated on payment events.
+  riskScore Int      @default(0)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+  invoices Invoice[]
+
+  @@index([userId])
+  @@map("clients")
+}
+
+// ─── Projects (the "baseline") ───────────────────────────────────────────────
+
+enum ProjectStatus {
+  DRAFT
+  AWAITING_APPROVAL
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+model Project {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId        String
+  client          Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  status          ProjectStatus @default(DRAFT)
+  // Baseline definition
+  totalBudget     Int           @default(0) // whole currency units
+  currency        String        @default("USD")
+  revisionsLimit  Int           @default(2)
+  revisionsUsed   Int           @default(0)
+  startDate       DateTime?
+  dueDate         DateTime?
+  // Public token for the read-only client portal
+  portalToken     String        @unique @default(cuid())
+  clientApprovedAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  deliverables Deliverable[]
+  milestones   Milestone[]
+  invoices     Invoice[]
+  contracts    Contract[]
+  scopeAlerts  ScopeAlert[]
+  changeOrders ChangeOrder[]
+
+  @@index([userId])
+  @@index([clientId])
+  @@map("projects")
+}
+
+model Deliverable {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  done        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([projectId])
+  @@map("deliverables")
+}
+
+enum MilestoneStatus {
+  PENDING
+  COMPLETED
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  // Percentage of the total budget this milestone bills (e.g. 30)
+  percentage  Int             @default(0)
+  amount      Int             @default(0) // resolved amount in whole currency units
+  dueDate     DateTime?
+  status      MilestoneStatus @default(PENDING)
+  completedAt DateTime?
+  // When a milestone is completed an invoice is auto-generated
+  invoice     Invoice?
+  order       Int             @default(0)
+  createdAt   DateTime        @default(now())
+
+  @@index([projectId])
+  @@map("milestones")
+}
+
+// ─── Invoices ────────────────────────────────────────────────────────────────
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  VOID
+}
+
+model Invoice {
+  id            String        @id @default(cuid())
+  number        String        @unique
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId      String
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  projectId     String?
+  project       Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  milestoneId   String?       @unique
+  milestone     Milestone?    @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  status        InvoiceStatus @default(DRAFT)
+  currency      String        @default("USD")
+  subtotal      Int           @default(0) // whole currency units
+  lateFee       Int           @default(0)
+  total         Int           @default(0)
+  notes         String?
+  issuedAt      DateTime?
+  dueDate       DateTime?
+  paidAt        DateTime?
+  paymentUrl    String?
+  stripeId      String?
+  // Day-N reminder cadence already sent (e.g. [1,7,14])
+  remindersSent Int[]         @default([])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items InvoiceItem[]
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Int     @default(1)
+  unitAmount  Int     @default(0) // whole currency units
+  amount      Int     @default(0)
+
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+// ─── Contracts ───────────────────────────────────────────────────────────────
+
+enum ContractStatus {
+  DRAFT
+  SENT
+  SIGNED
+  DECLINED
+}
+
+model Contract {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  title       String
+  template    String         @default("general") // web-dev | design | writing | marketing | general
+  jurisdiction String        @default("US")
+  body        String         @db.Text // markdown contract body
+  status      ContractStatus @default(DRAFT)
+  signToken   String         @unique @default(cuid())
+  signedByName String?
+  signedAt    DateTime?
+  generatedByAi Boolean      @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId])
+  @@map("contracts")
+}
+
+// ─── Scope sentinel ──────────────────────────────────────────────────────────
+
+enum ScopeVerdict {
+  IN_SCOPE
+  OUT_OF_SCOPE
+  AMBIGUOUS
+}
+
+enum ScopeAlertStatus {
+  OPEN
+  DISMISSED
+  CONVERTED // turned into a change order
+}
+
+model ScopeAlert {
+  id              String           @id @default(cuid())
+  projectId       String
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  // The raw client request that was analysed
+  sourceText      String           @db.Text
+  verdict         ScopeVerdict
+  confidence      Int              @default(0) // 0-100
+  reasoning       String           @db.Text
+  suggestedReply  String           @db.Text
+  estimatedHours  Float?
+  estimatedCost   Int?
+  status          ScopeAlertStatus @default(OPEN)
+  analysedByAi    Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+
+  changeOrder ChangeOrder?
+
+  @@index([projectId])
+  @@map("scope_alerts")
+}
+
+// ─── Change orders ───────────────────────────────────────────────────────────
+
+enum ChangeOrderStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+model ChangeOrder {
+  id            String            @id @default(cuid())
+  projectId     String
+  project       Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scopeAlertId  String?           @unique
+  scopeAlert    ScopeAlert?       @relation(fields: [scopeAlertId], references: [id], onDelete: SetNull)
+  title         String
+  description   String            @db.Text
+  extraHours    Float             @default(0)
+  extraCost     Int               @default(0)
+  status        ChangeOrderStatus @default(DRAFT)
+  approveToken  String            @unique @default(cuid())
+  respondedAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([projectId])
+  @@map("change_orders")
+}

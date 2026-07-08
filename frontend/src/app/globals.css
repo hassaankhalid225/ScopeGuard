@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-sand-50 text-ink antialiased;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold
+           transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-jade-400/40
+           disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply btn bg-jade-600 text-white shadow-sm hover:bg-jade-700 active:translate-y-px;
+  }
+  .btn-ink {
+    @apply btn bg-ink text-white hover:bg-ink-700 active:translate-y-px;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-700 hover:bg-sand-100;
+  }
+  .btn-outline {
+    @apply btn border border-ink-600/20 bg-white text-ink hover:border-jade-400 hover:text-jade-700;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-600/10 bg-white shadow-card;
+  }
+  .input {
+    @apply w-full rounded-xl border border-ink-600/15 bg-white px-3.5 py-2.5 text-sm text-ink
+           placeholder:text-ink-600/40 focus:border-jade-400 focus:outline-none focus:ring-2 focus:ring-jade-400/30;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink-700;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+}
+
+/* Markdown rendering for contracts */
+.prose-contract h1 { @apply mt-0 mb-4 text-2xl font-display font-semibold; }
+.prose-contract h2 { @apply mt-6 mb-2 text-lg font-semibold; }
+.prose-contract h3 { @apply mt-4 mb-1 font-semibold; }
+.prose-contract p  { @apply my-2 leading-relaxed text-ink-700; }
+.prose-contract ul { @apply my-2 list-disc pl-5 text-ink-700; }
+.prose-contract ol { @apply my-2 list-decimal pl-5 text-ink-700; }
+.prose-contract blockquote { @apply my-3 border-l-4 border-jade-300 bg-jade-50 py-2 pl-4 text-sm italic text-ink-700; }
+.prose-contract strong { @apply font-semibold text-ink; }
+.prose-contract hr { @apply my-5 border-ink-600/10; }
